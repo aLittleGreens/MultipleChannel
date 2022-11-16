@@ -1,0 +1,145 @@
+import groovy.transform.Field
+
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+apply from: "version.gradle"
+
+buildscript {
+    ext.kotlin_version = '1.5.20'
+
+    repositories {
+        google()
+        mavenLocal()
+        mavenCentral()
+
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:4.2.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.5.20"
+
+        // NOTE: Do not place your application dependencies here; they belong
+        // in the individual module build.gradle files
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenLocal()
+        mavenCentral()
+    }
+}
+
+@Field String mEnv = ""
+@Field String mCompany = ""
+@Field String mType = ""
+@Field String mFlavor = ""
+@Field String mCy = ""
+
+def getCurrentEnv() {
+    Gradle gradle = getGradle()
+    String taskReqStr = gradle.getStartParameter().getTaskRequests().toString()
+    println "taskReqStr:"+taskReqStr
+    Pattern pattern
+    if (taskReqStr.contains("assemble")) {
+        pattern = Pattern.compile("assembleChina(Cp1|Cp2|Cp3)(\\w+)(Yes|No)(Release|Debug)")
+    } else {
+        pattern = Pattern.compile("assembleChina(Cp1|Cp2|Cp3)(\\w+)(Yes|No)(Release|Debug)")
+    }
+    Matcher matcher = pattern.matcher(taskReqStr)
+    if (matcher.find()) {
+        String company = matcher.group(1)
+        char[] c1 = company.toCharArray()
+        c1[0] = Character.toLowerCase(c1[0])
+        mCompany = new String(c1)
+        println "getCurrentCompany:" + mCompany
+        ext.company = mCompany
+
+        String env = matcher.group(2)
+        char[] c2 = env.toCharArray()
+        c2[0] = Character.toLowerCase(c2[0])
+        mEnv = new String(c2)
+        println "getCurrentEnv:" + mEnv
+
+        String cy = matcher.group(3)
+        char[] c4 = cy.toCharArray()
+        c4[0] = Character.toLowerCase(c4[0])
+        mCy = new String(c4)
+        println "getCurrentCy:" + mCy
+
+        String type = matcher.group(4)
+        char[] c3 = type.toCharArray()
+        c3[0] = Character.toLowerCase(c3[0])
+        mType = new String(c3)
+        println "getCurrentType:" + mType
+
+        mFlavor = "china" + company + env+cy
+
+        println "getCurrentFlavor:" + mFlavor
+    } else {
+        println "getCurrentFlavorAndType:cannot find current flavor or type"
+    }
+}
+
+def replaceConfig() {
+    println "replaceConfig"
+    getCurrentEnv()
+}
+
+def systemSign() {
+    File originApk = new File(project.projectDir, "app/build/outputs/apk/" +
+            mFlavor + "/" + mType +  "/app-china" + "-" + mCompany + "-" + mEnv + "-"+mCy+"-" + mType + ".apk")
+    println "origin apk : " + originApk.absolutePath + ":" + originApk.exists()+ "\n !!!!!origin apk size is : "+ originApk.size()
+    if(originApk.exists()){
+        def apkVersion = ""
+        for (Project subProject : project.subprojects) {
+            if (subProject.name == "app") {
+                apkVersion = rootProject.ext.versionName
+                break
+            }
+        }
+
+        File outputDir = new File(project.projectDir, "/output/")
+        if (outputDir.exists()) {
+            outputDir.deleteDir()
+        }
+        outputDir.mkdir()
+
+        File signedApk = new File(outputDir, "MultipleChannel_" + apkVersion + "_" +
+                new Date().format("yyyyMMddHHmm", TimeZone.getTimeZone("GMT+08:00")) + "_" +
+                mEnv.toLowerCase() + "_" + mCompany +"_"+ mCy + "_" + mType + ".apk")
+        println "signed Apk will be saved as:" + signedApk.absolutePath
+
+        def inFile = project.projectDir.path +"/app/build/outputs/apk/" + mFlavor + "/" + mType
+        println "replace apk path "+inFile
+
+
+        def didWork = copy {
+            from inFile into outputDir
+            rename{ String fileName ->
+                fileName.replace(originApk.name,signedApk.getName())
+            }
+
+        }.didWork
+
+        println "copy is "+didWork
+    }
+
+
+
+}
+
+replaceConfig()
+
+gradle.buildFinished {
+    println "build finish"
+    systemSign()
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}
+
+
